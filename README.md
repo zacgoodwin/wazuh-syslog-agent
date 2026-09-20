@@ -7,7 +7,7 @@ Update the variables in the env file and give the stack a start and you should b
 
 After that you need to write your own decoder for Wazuh in the manager but you can see it's working under the agent's stats.
 
-# syslog-collector
+# AI readme about syslog-collector
 
 Two services, no image builds. `rsyslog/rsyslog-collector` (stock config) receives syslog on
 514/udp and 514/tcp and writes `/var/log/all.log` to the `syslog_data` volume. The Wazuh
