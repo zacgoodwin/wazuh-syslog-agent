@@ -6,7 +6,7 @@
 #
 # Copy .env.example to .env and set WAZUH_MANAGER_SERVER, then `docker compose up -d`.
 
-name: syslog-collector
+name: ${WAZUH_AGENT_NAME:-syslog-collector}-syslog-collector
 
 # Cap container stdout logs. The agent image tails ossec.log to stdout forever.
 x-logging: &logging
@@ -20,7 +20,7 @@ services:
     # Official image: https://docs.rsyslog.com/doc/containers/collector.html
     # Stock rsyslog config, no overrides. Release tags follow rsyslog 8.yymm.0 -> 20yy-mm.
     image: rsyslog/rsyslog-collector:${RSYSLOG_TAG:-latest}
-    container_name: rsyslog
+    container_name: ${WAZUH_AGENT_NAME:-syslog-collector}-rsyslog
     restart: unless-stopped
     logging: *logging
     environment:
@@ -81,7 +81,7 @@ services:
   wazuh-agent:
     # Agent version must be <= manager version.
     image: wazuh/wazuh-agent:${WAZUH_VERSION:-4.14.7}
-    container_name: wazuh-agent-syslog
+    container_name: ${WAZUH_AGENT_NAME:-syslog-collector}-wazuh-agent-syslog
     # Fixed hostname so the agent name does not change when the container is recreated.
     hostname: ${WAZUH_AGENT_NAME:-syslog-collector}
     restart: unless-stopped
