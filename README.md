@@ -3,14 +3,14 @@
 
 Collecting syslogs was a pain in the ass with Wazuh so I had AI make this. Simple docker compose file with rsyslog and the wazuh agent.
 
-Update the variables in the env file and give the stack a start and you should be off to the races. 
+Update the variables in the env file and give the stack a start and you should be off to the races. You can run multiple per docker host to have a unique agent for each Syslog endpoint; just remember to increment the port binding in the env file. 
 
 After that you need to write your own decoder for Wazuh in the manager but you can see it's working under the agent's stats.
 
 # AI readme about syslog-collector
 
 Two services, no image builds. `rsyslog/rsyslog-collector` (stock config) receives syslog on
-514/udp and 514/tcp and writes `/var/log/all.log` to the `syslog_data` volume. The Wazuh
+541/udp and 541/tcp and writes `/var/log/all.log` to the `syslog_data` volume. The Wazuh
 agent mounts that volume at `/var/log/remote`, tails `all.log`, and forwards to the manager
 on 1514/tcp. Size-based rotation runs as a background loop inside the rsyslog container.
 
