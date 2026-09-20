@@ -1,0 +1,118 @@
+# Syslog collector for agentless devices -> Wazuh. No image builds, two services.
+#
+#   device --514/udp,tcp--> rsyslog-collector --> /var/log/all.log (syslog_data volume)
+#                                                    |
+#                                     wazuh-agent tails it --1514/tcp--> manager
+#
+# Copy .env.example to .env and set WAZUH_MANAGER_SERVER, then `docker compose up -d`.
+
+name: syslog-collector
+
+# Cap container stdout logs. The agent image tails ossec.log to stdout forever.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  rsyslog:
+    # Official image: https://docs.rsyslog.com/doc/containers/collector.html
+    # Stock rsyslog config, no overrides. Release tags follow rsyslog 8.yymm.0 -> 20yy-mm.
+    image: rsyslog/rsyslog-collector:${RSYSLOG_TAG:-latest}
+    container_name: rsyslog
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      TZ: ${TZ:-America/Los_Angeles}
+      ENABLE_UDP: "on"
+      ENABLE_TCP: "on"
+      ENABLE_RELP: "off"
+      ENABLE_TLS: "off"
+      WRITE_ALL_FILE: "on"      # /var/log/all.log, RFC3339 timestamps (Wazuh pre-decoder parses these)
+      WRITE_JSON_FILE: "off"    # /var/log/all-json.log, not needed
+      MAX_MB: ${SYSLOG_ROTATE_MB:-100}
+      KEEP: ${SYSLOG_ROTATE_KEEP:-5}
+    ports:
+      - "${SYSLOG_PORT:-514}:514/udp"
+      - "${SYSLOG_PORT:-514}:514/tcp"
+    volumes:
+      - syslog_data:/var/log
+    # The image ships no log rotation. This replaces only CMD: the image entrypoint
+    # (start.sh) still runs `rsyslogd -N1` first, then execs this. A background loop
+    # rotates by size, then rsyslogd is exec'd so it stays PID 1. Keep the `exec`:
+    # rsyslogd only skips its PID file when it is PID 1 (tools/rsyslogd.c, "running as
+    # pid 1"). Without that, a stale /run/rsyslogd.pid blocks it after a container restart.
+    #
+    # Rename + HUP, not truncate: Wazuh raises rule 592 (level 8, "Log file size
+    # reduced") on truncation but only rule 591 (level 3, "Log file rotated") on an
+    # inode change. HUP makes rsyslogd close and reopen its output files.
+    #
+    # all.log is pre-created so the agent never finds it missing. The agent opens a
+    # file that appears later at END and would skip its first lines.
+    command:
+      - /bin/sh
+      - -c
+      - |
+        f=/var/log/all.log
+        mk() { [ -e "$$f" ] || : > "$$f"; }
+        mk
+        (
+          while sleep 300; do
+            # File gone (deleted by hand): recreate it and make rsyslogd reopen it.
+            s=$$(stat -c %s "$$f" 2>/dev/null) || { mk; kill -HUP 1; continue; }
+            [ "$$((s / 1048576))" -ge "$$MAX_MB" ] || continue
+            i=$$KEEP
+            while [ "$$i" -gt 1 ]; do
+              p=$$((i - 1))
+              [ -f "$$f.$$p.gz" ] && mv -f "$$f.$$p.gz" "$$f.$$i.gz"
+              i=$$p
+            done
+            mv -f "$$f" "$$f.1"
+            mk
+            kill -HUP 1
+            sleep 10
+            gzip -f "$$f.1"
+            echo "rotated $$f"
+          done
+        ) &
+        exec rsyslogd -n -f /etc/rsyslog.conf
+
+  wazuh-agent:
+    # Agent version must be <= manager version.
+    image: wazuh/wazuh-agent:${WAZUH_VERSION:-4.14.7}
+    container_name: wazuh-agent-syslog
+    # Fixed hostname so the agent name does not change when the container is recreated.
+    hostname: ${WAZUH_AGENT_NAME:-syslog-collector}
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      - rsyslog
+    environment:
+      TZ: ${TZ:-America/Los_Angeles}
+      WAZUH_MANAGER_SERVER: ${WAZUH_MANAGER_SERVER:?set WAZUH_MANAGER_SERVER in .env}
+      WAZUH_MANAGER_PORT: ${WAZUH_MANAGER_PORT:-1514}
+      WAZUH_REGISTRATION_SERVER: ${WAZUH_REGISTRATION_SERVER:-}
+      WAZUH_REGISTRATION_PORT: ${WAZUH_REGISTRATION_PORT:-1515}
+      WAZUH_REGISTRATION_PASSWORD: ${WAZUH_REGISTRATION_PASSWORD:-}
+      WAZUH_AGENT_NAME: ${WAZUH_AGENT_NAME:-syslog-collector}
+      WAZUH_AGENT_GROUP: ${WAZUH_AGENT_GROUP:-default}
+    volumes:
+      # Every file in ./wazuh-agent is copied into /var/ossec/etc at start
+      # (cont-init.d/0-wazuh-init), then the CHANGE_* placeholders in ossec.conf are
+      # filled from the environment. Directory mount, not a single-file mount: editors
+      # that replace the file would leave a single-file mount pointing at the old inode.
+      # After editing: `docker compose restart wazuh-agent`.
+      - ./wazuh-agent:/wazuh-config-mount/etc:ro
+      # rsyslog's /var/log, read-only. The agent reads /var/log/remote/all.log.
+      - syslog_data:/var/log/remote:ro
+      # client.keys lives here. Without it every recreate re-enrolls, and the manager
+      # rejects the duplicate name until the old agent has been disconnected for 1h.
+      - wazuh_agent_etc:/var/ossec/etc
+      # file_status.json (read offsets). Lets the agent resume where it stopped.
+      - wazuh_agent_logcollector:/var/ossec/queue/logcollector
+
+volumes:
+  syslog_data:
+  wazuh_agent_etc:
+  wazuh_agent_logcollector:
