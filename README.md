@@ -7,21 +7,21 @@ Update the variables in the env file and give the stack a start and you should b
 
 After that you need to write your own decoder for Wazuh in the manager but you can see it's working under the agent's stats.
 
-# AI readme about syslog-collector
+### AI readme about syslog-collector
 
 Two services, no image builds. `rsyslog/rsyslog-collector` (stock config) receives syslog on
 541/udp and 541/tcp and writes `/var/log/all.log` to the `syslog_data` volume. The Wazuh
 agent mounts that volume at `/var/log/remote`, tails `all.log`, and forwards to the manager
 on 1514/tcp. Size-based rotation runs as a background loop inside the rsyslog container.
 
-## Run
+### Run
 
 ```
 cp .env.example .env        # set WAZUH_MANAGER_SERVER, match WAZUH_VERSION to your manager
 docker compose up -d
 ```
 
-## Verify
+### Verify
 
 ```
 docker compose logs rsyslog | head        # entrypoint runs `rsyslogd -N1` and exits on a bad config
@@ -37,7 +37,7 @@ logger -n <docker-host-ip> -P 514 -d "after rotate"
 docker compose exec rsyslog ls -l /var/log/all.log*          # new all.log must exist and hold the line
 ```
 
-## Behaviour worth knowing
+### Behaviour worth knowing
 
 - **Line format.** The image writes `RSYSLOG_FileFormat` (`2026-09-20T06:43:00.123456-07:00 host prog: msg`).
   Wazuh's pre-decoder handles it (`src/analysisd/cleanevent.c:90`, v4.14.7).
@@ -76,7 +76,7 @@ docker compose exec rsyslog ls -l /var/log/all.log*          # new all.log must 
   stays at the version first installed. Same approach upstream uses in its 5.x compose.
 - Wazuh 5.x changes agent transport (HTTPS on 1517, different env vars). This targets 4.14.x.
 
-## What was checked before delivery
+### What was checked before delivery
 
 - `docker compose config`: passes; fails loudly when `WAZUH_MANAGER_SERVER` is unset.
 - `ossec.conf`: well-formed XML; placeholders match the agent image's init script.
