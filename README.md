@@ -1,3 +1,12 @@
+
+# Wazuh-Syslog-Agent
+
+Collecting syslogs was a pain in the ass with Wazuh so I had AI make this. Simple docker compose file with rsyslog and the wazuh agent.
+
+Update the variables in the env file and give the stack a start and you should be off to the races. 
+
+After that you need to write your own decoder for Wazuh in the manager but you can see it's working under the agent's stats.
+
 # syslog-collector
 
 Two services, no image builds. `rsyslog/rsyslog-collector` (stock config) receives syslog on
